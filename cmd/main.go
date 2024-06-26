@@ -23,6 +23,49 @@ func main() {
 	// Initialize the Ethereum parser with the memory storage
 	ethParser := parser.NewEthParser(ctx, storage, 10)
 
+	//Setup Routes
+	SetupRoutes(ethParser)
+
+	var wg sync.WaitGroup
+
+	// Start the HTTP server in a goroutine
+	server := &http.Server{Addr: ":8080"}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		log.Println("Starting the HTTP server")
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Could not listen on :8080: %v\n", err)
+		}
+	}()
+
+	// Set up a channel to listen for interrupt or terminate signals from the OS
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	// Wait for a signal to gracefully shut down
+	<-stop
+	log.Println("Received shutdown signal")
+
+	// Signal all goroutines to stop
+	cancel()
+
+	// Shut down the server gracefully
+	log.Println("Shutting down the server...")
+	if err := server.Close(); err != nil {
+		log.Fatalf("Server Close: %v", err)
+	}
+
+	// Wait for all goroutines to complete.
+	wg.Wait()
+	log.Println("HTTP server stopped")
+
+	// Wait for parser goroutines to terminate.
+	ethParser.WaitForShutdown()
+	log.Println("Application gracefully stopped")
+}
+
+func SetupRoutes(ethParser parser.Parser) {
 	// Endpoint to get the current block number
 	http.HandleFunc("/current_block", func(w http.ResponseWriter, r *http.Request) {
 		block := ethParser.GetCurrentBlock()
@@ -64,40 +107,4 @@ func main() {
 		}
 		json.NewEncoder(w).Encode(transactions)
 	})
-
-	// Start the HTTP server in a goroutine
-	server := &http.Server{Addr: ":8080"}
-	var serverWg sync.WaitGroup
-	serverWg.Add(1)
-	go func() {
-		defer serverWg.Done()
-		log.Println("Starting the HTTP server")
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Could not listen on :8080: %v\n", err)
-		}
-	}()
-
-	// Set up a channel to listen for interrupt or terminate signals from the OS
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-
-	// Wait for a signal to gracefully shut down
-	<-stop
-	log.Println("Received shutdown signal")
-
-	// Signal all goroutines to stop
-	cancel()
-
-	// Shut down the server gracefully
-	log.Println("Shutting down the server...")
-	if err := server.Close(); err != nil {
-		log.Fatalf("Server Close: %v", err)
-	}
-
-	// Wait for all goroutines to complete
-	serverWg.Wait()
-	log.Println("HTTP server stopped")
-
-	ethParser.WaitForShutdown()
-	log.Println("Server gracefully stopped")
 }
