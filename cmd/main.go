@@ -21,7 +21,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Initialize the Ethereum parser with the memory storage
-	ethParser := parser.NewEthParser(ctx, storage, 10)
+	ethParser := parser.NewEthParser(ctx, storage, 10, parser.NewJsonRpcClient(), parser.NotifyOnConsole)
 
 	//Setup Routes
 	SetupRoutes(ethParser)

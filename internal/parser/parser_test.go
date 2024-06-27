@@ -1,71 +1,77 @@
-package parser
+package parser_test
 
 import (
 	"context"
+	"eth-parser/internal/parser"
+	"sync"
 	"testing"
 	"time"
 )
 
-// TestSubscribe tests the subscription functionality
-func TestSubscribe(t *testing.T) {
-	storage := NewMemoryStorage()
+func TestEthParser(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	parser := NewEthParser(ctx, storage, 10)
-	success := parser.Subscribe("0xSomeAddress")
-	if !success {
-		t.Errorf("Expected subscription to be successful")
-	}
-	success = parser.Subscribe("0xSomeAddress")
-	if success {
-		t.Errorf("Expected subscription to fail for already subscribed address")
-	}
-	parser.WaitForShutdown()
-}
 
-// TestGetTransactions tests fetching transactions for a subscribed address
-func TestGetTransactions(t *testing.T) {
-	storage := NewMemoryStorage()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	parser := NewEthParser(ctx, storage, 10)
-	parser.Subscribe("0xSomeAddress")
-	transactions := parser.GetTransactions("0xSomeAddress")
-	if len(transactions) != 0 {
-		t.Errorf("Expected no transactions for new address")
-	}
-	parser.WaitForShutdown()
-}
+	mockBlockchain := NewMockBlockchain()
+	storage := NewMockStorage()
 
-// TestUpdateCurrentBlock tests the updateCurrentBlock functionality
-func TestUpdateCurrentBlock(t *testing.T) {
-	storage := NewMemoryStorage()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	parser := NewEthParser(ctx, storage, 10)
-	parser.updateCurrentBlock()
-	currentBlock := parser.GetCurrentBlock()
-	if currentBlock <= 0 {
-		t.Errorf("Expected current block to be greater than 0")
+	// Simulate blocks with transactions
+	block1 := parser.Block{
+		Number: "0x1",
+		Transactions: []parser.Transaction{
+			{Hash: "0xabc", From: "0x1", To: "0x2", Value: "100"},
+		},
 	}
-	parser.WaitForShutdown()
-}
+	block2 := parser.Block{
+		Number: "0x2",
+		Transactions: []parser.Transaction{
+			{Hash: "0xdef", From: "0x2", To: "0x3", Value: "200"},
+		},
+	}
 
-// TestFetchTransactions tests the fetchTransactions functionality
-func TestFetchTransactions(t *testing.T) {
-	storage := NewMemoryStorage()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	parser := NewEthParser(ctx, storage, 10)
-	parser.Subscribe("0xSomeAddress")
-	parser.updateCurrentBlock()
-	parser.fetchTransactions()
-	transactions := parser.GetTransactions("0xSomeAddress")
-	if len(transactions) != 0 {
-		t.Errorf("Expected no transactions for new address after fetching")
+	mockBlockchain.AddBlock(1, block1)
+	mockBlockchain.AddBlock(2, block2)
+
+	notifications := make(map[string][]parser.Transaction)
+	var mu sync.Mutex
+
+	notifyFunc := func(address string, transactions []parser.Transaction) {
+		mu.Lock()
+		defer mu.Unlock()
+		notifications[address] = append(notifications[address], transactions...)
 	}
-	// Ensure the background tasks are stopped gracefully
-	cancel()
-	time.Sleep(time.Second)
-	parser.WaitForShutdown()
+
+	ethParser := parser.NewEthParser(ctx, storage, 1, NewMockClient(mockBlockchain), notifyFunc)
+
+	// Subscribe to addresses
+	if !ethParser.Subscribe("0x1") {
+		t.Fatal("Failed to subscribe to address 0x1")
+	}
+	if !ethParser.Subscribe("0x2") {
+		t.Fatal("Failed to subscribe to address 0x2")
+	}
+
+	// Wait for background tasks to process the mock data
+	time.Sleep(2 * time.Second)
+
+	// Check transactions for subscribed addresses
+	transactions := ethParser.GetTransactions("0x1")
+	if len(transactions) != 1 || transactions[0].Hash != "0xabc" {
+		t.Fatalf("Unexpected transactions for address 0x1: %v", transactions)
+	}
+
+	transactions = ethParser.GetTransactions("0x2")
+	if len(transactions) != 2 || transactions[1].Hash != "0xdef" {
+		t.Fatalf("Unexpected transactions for address 0x2: %v", transactions)
+	}
+
+	// Verify notifications
+	mu.Lock()
+	defer mu.Unlock()
+	if len(notifications["0x1"]) != 1 || notifications["0x1"][0].Hash != "0xabc" {
+		t.Fatalf("Unexpected notifications for address 0x1: %v", notifications["0x1"])
+	}
+	if len(notifications["0x2"]) != 2 || notifications["0x2"][1].Hash != "0xdef" {
+		t.Fatalf("Unexpected notifications for address 0x2: %v", notifications["0x2"])
+	}
 }

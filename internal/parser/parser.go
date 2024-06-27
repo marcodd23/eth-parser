@@ -1,22 +1,17 @@
 package parser
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"strconv"
 	"sync"
 	"time"
 )
 
-// Ethereum node URL for JSON-RPC requests
-const (
-	ethereumNodeURL = "https://cloudflare-eth.com"
-)
+// initialLookBackBlocksCount specifies the number of blocks to check backwards from the current block when the app starts for the first time
+const initialLookBackBlocksCount = 10
 
 // Parser defines the interface for the Ethereum parser
 type Parser interface {
@@ -32,7 +27,9 @@ type EthParser struct {
 	lastProcessedBlock int
 	subscriptions      map[string]bool
 	storage            Storage
-	updateRatePeriod   int
+	fetchPeriod        int
+	client             JsonRpcClient
+	notify             NotificationFunc
 	mu                 sync.Mutex
 	wg                 sync.WaitGroup
 	cancel             context.CancelFunc
@@ -40,25 +37,36 @@ type EthParser struct {
 
 // NewEthParser creates a new EthParser instance with initial settings and begins background tasks
 // necessary for its operation. It takes a context (ctx) for handling cancellation of background operations,
-// a storage interface to interact with the storage layer, and an updateRatePeriod which defines the frequency
+// a storage interface to interact with the storage layer, and an fetchPeriod which defines the frequency
 // of updates in seconds. The function initializes an EthParser with a map to manage subscriptions, the provided
-// storage, and sets the last processed block to zero.
+// storage, and initialize the lastProcessedBlock and currentBlock.
 // It returns a pointer to the newly created EthParser instance.
 //
 // Parameters:
 //   - ctx: Parent context to which a new cancellable context is derived for background task management.
 //     It allows the background tasks to be stopped externally.
 //   - storage: Storage interface that the parser uses to interact with the underlying storage mechanism.
-//   - updateRatePeriod: The interval in seconds at which the parser updates its data from the blockchain.
+//   - fetchPeriod: The interval in seconds at which the parser updates its data from the blockchain.
+//   - client: A function type for sending JSON-RPC requests
+//   - notify: a function to send custom notifications
 //
 // Returns:
 //   - *EthParser: A pointer to the newly created EthParser instance.
-func NewEthParser(ctx context.Context, storage Storage, updateRatePeriod int) *EthParser {
+//
+// NewEthParser creates a new EthParser instance
+func NewEthParser(
+	ctx context.Context,
+	storage Storage,
+	fetchPeriod int,
+	client JsonRpcClient,
+	notify NotificationFunc) *EthParser {
 	parser := &EthParser{
 		subscriptions:      make(map[string]bool),
 		storage:            storage,
 		lastProcessedBlock: 0,
-		updateRatePeriod:   updateRatePeriod,
+		fetchPeriod:        fetchPeriod,
+		client:             client,
+		notify:             notify,
 	}
 
 	parser.initializeCurrentBlock()
@@ -78,7 +86,7 @@ func (p *EthParser) setupBackgroundUpdateTasks(ctx context.Context) {
 	// runUpdateCurrentBlock updates the current block number periodically
 	go func() {
 		defer p.wg.Done()
-		ticker := time.NewTicker(time.Second * time.Duration(p.updateRatePeriod))
+		ticker := time.NewTicker(time.Second * time.Duration(p.fetchPeriod))
 		defer ticker.Stop()
 		for {
 			select {
@@ -95,7 +103,7 @@ func (p *EthParser) setupBackgroundUpdateTasks(ctx context.Context) {
 	// runFetchTransactions fetches transactions for subscribed addresses periodically
 	go func() {
 		defer p.wg.Done()
-		ticker := time.NewTicker(time.Second * time.Duration(p.updateRatePeriod+5))
+		ticker := time.NewTicker(time.Second * time.Duration(p.fetchPeriod))
 		defer ticker.Stop()
 		for {
 			select {
@@ -148,7 +156,13 @@ func (p *EthParser) initializeCurrentBlock() {
 	if p.lastProcessedBlock == 0 {
 		p.updateCurrentBlock()
 		p.mu.Lock()
-		p.lastProcessedBlock = p.currentBlock - 50 // Set to a recent block, 50 blocks back
+		p.lastProcessedBlock = p.currentBlock - initialLookBackBlocksCount
+
+		// Ensure lastProcessedBlock is not negative
+		if p.lastProcessedBlock < 0 {
+			p.lastProcessedBlock = 0
+		}
+
 		p.mu.Unlock()
 	}
 }
@@ -162,7 +176,7 @@ func (p *EthParser) updateCurrentBlock() {
 		ID:      1,
 	}
 
-	resp, err := sendJSONRPCRequest(req)
+	resp, err := p.client.SendRequest(req)
 	if err != nil {
 		log.Println("Error fetching block number:", err)
 		return
@@ -246,7 +260,7 @@ func (p *EthParser) getBlockByNumber(number int) (Block, error) {
 		ID:      1,
 	}
 
-	resp, err := sendJSONRPCRequest(req)
+	resp, err := p.client.SendRequest(req)
 	if err != nil {
 		return Block{}, err
 	}
@@ -267,45 +281,4 @@ func (p *EthParser) getBlockByNumber(number int) (Block, error) {
 	}
 
 	return block, nil
-}
-
-// sendJSONRPCRequest sends a JSON-RPC request to the Ethereum node and returns the response
-func sendJSONRPCRequest(req JSONRPCRequest) (JSONRPCResponse, error) {
-	reqBytes, err := json.Marshal(req)
-	if err != nil {
-		return JSONRPCResponse{}, err
-	}
-
-	resp, err := http.Post(ethereumNodeURL, "application/json", bytes.NewBuffer(reqBytes))
-	if err != nil {
-		return JSONRPCResponse{}, err
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return JSONRPCResponse{}, err
-	}
-
-	var rpcResp JSONRPCResponse
-	if err := json.Unmarshal(body, &rpcResp); err != nil {
-		return JSONRPCResponse{}, err
-	}
-
-	if rpcResp.Error != nil {
-		return rpcResp, fmt.Errorf("JSON-RPC error: %v", rpcResp.Error)
-	}
-
-	return rpcResp, nil
-}
-
-// notify simulates sending a notification about new transactions
-func (p *EthParser) notify(address string, transactions []Transaction) {
-	// Simulate sending a notification (e.g., print to console)
-	for _, tx := range transactions {
-		log.Printf("Notification - Address: %s, Transaction: %s, From: %s, To: %s, Value: %s, Block: %s\n",
-			address, tx.Hash, tx.From, tx.To, tx.Value, tx.BlockNumber)
-	}
-
-	// In a real implementation, you would send an HTTP request to a notification service here.
 }
