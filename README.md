@@ -34,8 +34,7 @@ eth-parser/
 │   └── main.go
 ├── internal/
 │   ├── parser/
-│   │   ├── integration_test.go
-│   │   ├── jsonrpc.go
+│   │   ├── client.go
 │   │   ├── mock.go
 │   │   ├── models.go
 │   │   ├── notification.go
