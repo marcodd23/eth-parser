@@ -22,9 +22,8 @@ The application is designed with modularity and encapsulation in mind, using a c
 - **internal/parser/storage.go**: Implements in-memory storage for transactions.
 - **internal/parser/models.go**: Defines models for JSON-RPC requests and responses, as well as Ethereum transactions.
 - **internal/parser/notification.go**: Defines the notification function type and example implementations.
-- **internal/parser/jsonrpc.go**: Implements the JSON-RPC request function.
+- **internal/parser/client.go**: Contains the Json-Rpc Client interface and its default implementation.
 - **internal/parser/parser_test.go**: Contains unit tests for the parser functionalities.
-- **internal/parser/integration_test.go**: Contains integration tests for end-to-end functionality.
 
 ## Folder Structure
 
