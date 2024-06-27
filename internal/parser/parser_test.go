@@ -35,6 +35,7 @@ func TestEthParser(t *testing.T) {
 	notifications := make(map[string][]parser.Transaction)
 	var mu sync.Mutex
 
+	// Mock a Notification Fucntion
 	notifyFunc := func(address string, transactions []parser.Transaction) {
 		mu.Lock()
 		defer mu.Unlock()

@@ -83,7 +83,7 @@ func NewEthParser(
 func (p *EthParser) setupBackgroundUpdateTasks(ctx context.Context) {
 	p.wg.Add(2)
 
-	// runUpdateCurrentBlock updates the current block number periodically
+	// updates the current block number periodically
 	go func() {
 		defer p.wg.Done()
 		ticker := time.NewTicker(time.Second * time.Duration(p.fetchPeriod))
@@ -100,7 +100,7 @@ func (p *EthParser) setupBackgroundUpdateTasks(ctx context.Context) {
 		}
 	}()
 
-	// runFetchTransactions fetches transactions for subscribed addresses periodically
+	// fetches transactions for subscribed addresses periodically
 	go func() {
 		defer p.wg.Done()
 		ticker := time.NewTicker(time.Second * time.Duration(p.fetchPeriod))
@@ -183,14 +183,14 @@ func (p *EthParser) updateCurrentBlock() {
 	}
 
 	blockNumberHex := resp.Result.(string) // ex. 0x4b7
-	blockNumber, err := strconv.ParseInt(blockNumberHex[2:], 16, 64)
+	blockNumberDecimal, err := convertHexNumberToDecimal(blockNumberHex)
 	if err != nil {
 		log.Println("Error parsing block number:", err)
 		return
 	}
 
 	p.mu.Lock()
-	p.currentBlock = int(blockNumber)
+	p.currentBlock = blockNumberDecimal
 	p.mu.Unlock()
 }
 
@@ -216,7 +216,7 @@ func (p *EthParser) fetchTransactions() {
 			continue
 		}
 
-		blockNumberInt, err := strconv.ParseInt(block.Number[2:], 16, 64)
+		blockNumberDecimal, err := convertHexNumberToDecimal(block.Number)
 		if err != nil {
 			log.Println("Error parsing block number:", err)
 			continue
@@ -226,7 +226,7 @@ func (p *EthParser) fetchTransactions() {
 
 		for _, tx := range block.Transactions {
 			if subscribedAddresses[tx.From] || subscribedAddresses[tx.To] {
-				tx.BlockNumberInt = int(blockNumberInt)
+				tx.BlockNumberDecimal = blockNumberDecimal
 				if subscribedAddresses[tx.From] {
 					transactionsForAddresses[tx.From] = append(transactionsForAddresses[tx.From], tx)
 				}
@@ -281,4 +281,14 @@ func (p *EthParser) getBlockByNumber(number int) (Block, error) {
 	}
 
 	return block, nil
+}
+
+func convertHexNumberToDecimal(hexNumber string) (int, error) {
+	blockNumber, err := strconv.ParseInt(hexNumber[2:], 16, 64)
+	if err != nil {
+		log.Println("Error parsing hex number:", err)
+		return -1, err
+	}
+
+	return int(blockNumber), nil
 }

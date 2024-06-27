@@ -20,7 +20,7 @@ func main() {
 	// Create a context that will be canceled on shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Initialize the Ethereum parser with the memory storage
+	// Initialize the Ethereum parser with the memory storage and JsonRpc Client
 	ethParser := parser.NewEthParser(ctx, storage, 10, parser.NewJsonRpcClient(), parser.NotifyOnConsole)
 
 	//Setup Routes

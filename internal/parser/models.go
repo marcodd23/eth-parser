@@ -18,12 +18,12 @@ type JSONRPCResponse struct {
 
 // Transaction represents a simplified Ethereum transaction
 type Transaction struct {
-	Hash           string `json:"hash"`
-	From           string `json:"from"`
-	To             string `json:"to"`
-	Value          string `json:"value"`
-	BlockNumber    string `json:"blockNumber"`
-	BlockNumberInt int    `json:"-"`
+	Hash               string `json:"hash"`
+	From               string `json:"from"`
+	To                 string `json:"to"`
+	Value              string `json:"value"`
+	BlockNumber        string `json:"blockNumber"`
+	BlockNumberDecimal int    `json:"-"`
 }
 
 // Block represents a simplified Ethereum block
