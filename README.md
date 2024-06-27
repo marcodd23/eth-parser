@@ -24,6 +24,7 @@ The application is designed with modularity and encapsulation in mind, using a c
 - **internal/parser/notification.go**: Defines the notification function type and example implementations.
 - **internal/parser/client.go**: Contains the Json-Rpc Client interface and its default implementation.
 - **internal/parser/parser_test.go**: Contains unit tests for the parser functionalities.
+- **internal/parser/mock_test.go**: Contains mock for the Storage, Blockchain and JsonRpcClient
 
 ## Folder Structure
 
@@ -128,9 +129,6 @@ Defines the NotificationFunc type, allowing different notification mechanisms to
 
 ### `internal/parser/client.go`
 It defines the JsonRpcClient interface and its default implementation for sending JSON-RPC requests to an Ethereum node.
-
-### `internal/parser/mock_test.go`
-Contains mock for the Storage, Blockchain and JsonRpcClient
 
 ### `internal/parser/parser_test.go`
 
