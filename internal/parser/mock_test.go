@@ -26,10 +26,11 @@ func NewMockStorage() *MockStorage {
 }
 
 // SaveTransactions saves transactions to the mock storage
-func (m *MockStorage) SaveTransactions(address string, transactions []parser.Transaction) {
+func (m *MockStorage) SaveTransactions(address string, transactions []parser.Transaction) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.data[address] = append(m.data[address], transactions...)
+	return nil
 }
 
 // GetTransactions returns transactions from the mock storage

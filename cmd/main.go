@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 
 	"eth-parser/internal/parser"
@@ -18,7 +17,7 @@ func main() {
 	storage := parser.NewMemoryStorage()
 
 	// Create a context that will be canceled on shutdown
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx := context.Background()
 
 	// Initialize the Ethereum parser with the memory storage and JsonRpc Client
 	ethParser := parser.NewEthParser(ctx, storage, 10, parser.NewJsonRpcClient(), parser.NotifyOnConsole)
@@ -26,17 +25,15 @@ func main() {
 	//Setup Routes
 	SetupRoutes(ethParser)
 
-	var wg sync.WaitGroup
-
 	// Start the HTTP server in a goroutine
 	server := &http.Server{Addr: ":8080"}
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		log.Println("Starting the HTTP server")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Could not listen on :8080: %v\n", err)
 		}
+
+		log.Println("HTTP server stopped")
 	}()
 
 	// Set up a channel to listen for interrupt or terminate signals from the OS
@@ -47,18 +44,11 @@ func main() {
 	<-stop
 	log.Println("Received shutdown signal")
 
-	// Signal all goroutines to stop
-	cancel()
-
 	// Shut down the server gracefully
 	log.Println("Shutting down the server...")
 	if err := server.Close(); err != nil {
 		log.Fatalf("Server Close: %v", err)
 	}
-
-	// Wait for all goroutines to complete.
-	wg.Wait()
-	log.Println("HTTP server stopped")
 
 	// Wait for parser goroutines to terminate.
 	ethParser.WaitForShutdown()

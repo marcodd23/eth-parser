@@ -55,7 +55,7 @@ type EthParser struct {
 //
 // NewEthParser creates a new EthParser instance
 func NewEthParser(
-	ctx context.Context,
+	cancellableCtx context.Context,
 	storage Storage,
 	fetchPeriod int,
 	client JsonRpcClient,
@@ -71,16 +71,17 @@ func NewEthParser(
 
 	parser.initializeCurrentBlock()
 
-	ctx, cancel := context.WithCancel(ctx)
+	// Create a new Cancellable Context and set it in the parser the cancel() function
+	cancellableCtx, cancel := context.WithCancel(cancellableCtx)
 	parser.cancel = cancel
 
-	// Start the background tasks
-	parser.setupBackgroundUpdateTasks(ctx)
+	// Start the background tasks under the cancellableCtx
+	parser.setupBackgroundUpdateTasks(cancellableCtx)
 
 	return parser
 }
 
-func (p *EthParser) setupBackgroundUpdateTasks(ctx context.Context) {
+func (p *EthParser) setupBackgroundUpdateTasks(cancelCtx context.Context) {
 	p.wg.Add(2)
 
 	// updates the current block number periodically
@@ -93,7 +94,7 @@ func (p *EthParser) setupBackgroundUpdateTasks(ctx context.Context) {
 			case <-ticker.C:
 				log.Println("Updating current block")
 				p.updateCurrentBlock()
-			case <-ctx.Done():
+			case <-cancelCtx.Done():
 				log.Println("Stopping runUpdateCurrentBlock")
 				return
 			}
@@ -110,7 +111,7 @@ func (p *EthParser) setupBackgroundUpdateTasks(ctx context.Context) {
 			case <-ticker.C:
 				log.Println("Fetching new transactions")
 				p.fetchTransactions()
-			case <-ctx.Done():
+			case <-cancelCtx.Done():
 				log.Println("Stopping runFetchTransactions")
 				return
 			}
@@ -146,8 +147,6 @@ func (p *EthParser) Subscribe(address string) bool {
 
 // GetTransactions returns the list of transactions for a given address
 func (p *EthParser) GetTransactions(address string) []Transaction {
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	return p.storage.GetTransactions(address)
 }
 
@@ -239,7 +238,10 @@ func (p *EthParser) fetchTransactions() {
 		for address, transactions := range transactionsForAddresses {
 			log.Printf("Found %d transactions for address %s in block %d\n", len(transactions), address, i)
 			p.notify(address, transactions)
-			p.storage.SaveTransactions(address, transactions)
+			err := p.storage.SaveTransactions(address, transactions)
+			if err != nil {
+				log.Printf("error saving transaction for addres %s", address)
+			}
 		}
 	}
 
